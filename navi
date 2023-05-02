@@ -366,9 +366,9 @@ start() {
   conversation_file=$(load_conversation_file)
 
   # Prompt the user for input
-  echo "${color_user}"
+  echo -e "${color_user}"
   read -p "You: " INPUT
-  echo "${reset}"
+  echo -e "${reset}"
 
   # Add user input to context json
   conversation_json=$(cat $conversation_file)
@@ -398,7 +398,7 @@ start() {
   save_conversation "$conversation_file" "$new_conversation_json"
 
   # save_conversation "$conversation_file" "$new_conversation_json"
-  echo "${color_info}Navi: \n$(echo $(cat $HOME/.navi/message.tmp))${reset}"
+  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp))${reset}"
 }
 
 remove_first_last_char() {
