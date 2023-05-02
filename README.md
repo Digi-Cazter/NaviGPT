@@ -1,0 +1,1 @@
+`curl -sSL https://example.com/install.sh | bash`
