@@ -15,12 +15,12 @@ MODEL_ID="gpt-3.5-turbo"
 #   color_user='\033[94m'
 #   reset='\033[0m'
 # else
-#   # Terminal doesn't support colors
-#   color_info=''
-#   color_success=''
-#   color_error=''
-#   color_user=''
-#   reset=''
+  # Terminal doesn't support colors
+  color_info=''
+  color_success=''
+  color_error=''
+  color_user=''
+  reset=''
 # fi
 
 # Function to load the OpenAI API key from configuration
