@@ -6,22 +6,22 @@ API_ENDPOINT="https://api.openai.com/v1/chat"
 # Set the model ID
 MODEL_ID="gpt-3.5-turbo"
 
-# if [[ "$TERM" == *"color"* ]]; then
-#   # Terminal supports colors
-#   # Setup shell colors
-#   color_info='\033[33m'
-#   color_success='\033[0;32m'
-#   color_error='\033[31m'
-#   color_user='\033[94m'
-#   reset='\033[0m'
-# else
+if [[ "$TERM" == *"color"* ]]; then
+  # Terminal supports colors
+  # Setup shell colors
+  color_info='\033[33m'
+  color_success='\033[0;32m'
+  color_error='\033[31m'
+  color_user='\033[94m'
+  reset='\033[0m'
+else
   # Terminal doesn't support colors
   color_info=''
   color_success=''
   color_error=''
   color_user=''
   reset=''
-# fi
+fi
 
 # Function to load the OpenAI API key from configuration
 load_api_key() {
