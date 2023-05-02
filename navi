@@ -1,0 +1,443 @@
+#!/bin/sh
+
+# Set the API endpoint
+API_ENDPOINT="https://api.openai.com/v1/chat"
+
+# Set the model ID
+MODEL_ID="gpt-3.5-turbo"
+
+if [[ "$TERM" == *"color"* ]]; then
+  # Terminal supports colors
+  # Setup shell colors
+  color_info='\033[33m'
+  color_success='\033[0;32m'
+  color_error='\033[31m'
+  color_user='\033[94m'
+  reset='\033[0m'
+else
+  # Terminal doesn't support colors
+  color_info=''
+  color_success=''
+  color_error=''
+  color_user=''
+  reset=''
+fi
+
+# Function to load the OpenAI API key from configuration
+load_api_key() {
+  # Check that the file exists
+  if [ ! -f "/etc/navi/config.json" ]; then
+    echo "${color_error}Error: config file not found${reset}" >&2
+    exit 1
+  fi
+  
+  # Load the api_key from the config file using jq
+  api_key=$(jq -r '.api_key' "/etc/navi/config.json")
+  
+  # Check that the api_key was loaded successfully
+  if [ -z "$api_key" ]; then
+    echo "${color_error}Error: api_key not found in config file, please run 'navi setup' again${reset}" >&2
+    exit 1
+  fi
+  
+  echo $api_key
+}
+
+# Function to check if required files and directories exist
+check_setup() {
+  valid=true
+
+  # Check for /etc/navi directory
+  if [ ! -d "/etc/navi" ]; then
+    valid=false
+  fi
+    
+  # Check for ~/.navi directory
+  if [ ! -d "$HOME/.navi" ]; then
+    valid=false
+  fi
+    
+  # Check for ~/.navi/conversations directory
+  if [ ! -d "$HOME/.navi/conversations" ]; then
+    valid=false
+  fi
+    
+  # Check for /etc/navi/config.json file
+  if [ ! -f "/etc/navi/config.json" ]; then
+    valid=false
+  fi
+    
+  # Check for ~/.navi/contexts.json file
+  if [ ! -f "$HOME/.navi/contexts.json" ]; then
+    valid=false
+  fi  
+
+  if ! $valid; then
+    echo "${color_error}Navi has not been configured. Please run 'navi setup' to configure.${reset}"
+    exit 1
+  fi
+}
+
+# Function to handle the setup command
+setup() {
+  # Check if Navi setup has already been completed
+  if [ -d "/etc/navi" ] && [ -d "$HOME/.navi" ] && api_key=$(load_api_key 2>/dev/null); then
+    echo "${color_success}Navi setup already completed.${reset}"
+    exit 1
+  fi
+
+  # Create directories and files
+  sudo mkdir -p /etc/navi
+  mkdir -p $HOME/.navi
+  mkdir -p $HOME/.navi/conversations
+
+  # Create default conversation file
+  default_conversation=$(jq -n --arg model "$MODEL_ID" '{model: $model, temperature: 0.7, messages: []}')
+  echo "$default_conversation" > "$HOME/.navi/conversations/default.json"
+
+  # Create contexts file
+  default_context=$(jq -n --arg path "$HOME/.navi/conversations/default.json" '{current_context: "default", contexts: {default: $path}}')
+  echo "$default_context" > "$HOME/.navi/contexts.json"
+
+  # Prompt for API key
+  read -p "Enter your API key: " api_key
+  echo 
+
+  # Add API key to config.json
+  echo "{\"api_key\": \"$api_key\"}" | sudo tee /etc/navi/config.json > /dev/null
+
+  # Set permissions for /etc/navi directory and its contents
+  sudo chmod -R 755 /etc/navi
+
+  echo "${color_success}Navi setup completed successfully.${reset}"
+}
+
+create_context() {
+  # Prompt for the context name
+  read -p "Enter a name for the new context: " context_name
+
+  # Check that the context name is not empty
+  if [ -z "$context_name" ]; then
+    echo "${color_error}Error: context name cannot be empty${reset}" >&2
+    exit 1
+  fi
+
+  # Generate a new conversation file name using a GUID
+  conversation_file="$HOME/.navi/conversations/$(uuidgen).json"
+
+  # Create an empty conversation file
+  echo "{\"model\": \"$MODEL_ID\", \"temperature\": 0.7, \"messages\": []}" | jq . > "$conversation_file"
+
+  # Add the new context to the contexts file
+  contexts_file="$HOME/.navi/contexts.json"
+  contexts=$(jq -r '.contexts' "$contexts_file")
+  contexts=$(echo "$contexts" | jq ".+ {\"$context_name\": \"$conversation_file\"}")
+  current_context=$(jq -r '.current_context' "$contexts_file")
+  echo "{\"current_context\": \"$current_context\", \"contexts\": $contexts}" > "$contexts_file"
+
+  echo "${color_success}New context '$context_name' created.${reset}"
+}
+
+select_context() {
+  # Get the list of contexts
+  contexts_list=$(get_contexts_list)
+
+  # Check that there is at least one context
+  if [ -z "$contexts_list" ]; then
+    echo "${color_error}Error: no contexts found in file${reset}" >&2
+    exit 1
+  fi
+
+  # Present the list of contexts to the user and prompt for selection
+  echo "${color_info}"
+  echo "Select a context:"
+  i=1
+  while read -r context; do
+    echo "$i) $context"
+    i=$((i+1))
+  done <<< "$contexts_list"
+  echo "${reset}"
+  read -p "Enter number: " choice
+
+  # Set the default choice to 1 if no input is provided
+  choice=${choice:-1}
+
+  # Check that the choice is a valid integer
+  if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+    echo "${color_error}Error: '$choice' is not a valid integer${reset}" >&2
+    exit 1
+  fi
+
+  # Check that the choice is within the range of options
+  if [ "$choice" -lt 1 ] || [ "$choice" -gt "$i" ]; then
+    echo "${color_error}Error: '$choice' is not a valid option${reset}" >&2
+    exit 1
+  fi
+
+  # Get the selected context from the list
+  context=$(echo "$contexts_list" | sed "${choice}q;d")
+
+  # Use jq to set the selected context as the current context in contexts.json
+  jq --arg context "$context" '.current_context = $context' "$HOME/.navi/contexts.json" > tmp.json && mv tmp.json "$HOME/.navi/contexts.json"
+
+  echo "${color_success}Context '$context' selected.${reset}"
+}
+
+# Delete a context
+delete_context() {
+  # Get the list of contexts
+  contexts_list=$(get_contexts_list)
+
+  # Check that there is at least one context
+  if [ -z "$contexts_list" ]; then
+    echo "${color_error}Error: no contexts found in file${reset}" >&2
+    exit 1
+  fi
+
+  # Present the list of contexts to the user and prompt for selection
+  echo "${color_info}"
+  echo "Select a context:"
+  i=1
+  while read -r context; do
+    echo "$i) $context"
+    i=$((i+1))
+  done <<< "$contexts_list"
+  echo "${reset}"
+  read -p "Enter number: " choice
+
+  # Set the default choice to 1 if no input is provided
+  choice=${choice:-1}
+
+  # Check that the choice is a valid integer
+  if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+    echo "${color_error}Error: '$choice' is not a valid integer${reset}" >&2
+    exit 1
+  fi
+
+  # Check that the choice is within the range of options
+  if [ "$choice" -lt 1 ] || [ "$choice" -gt "$i" ]; then
+    echo "${color_error}Error: '$choice' is not a valid option${reset}" >&2
+    exit 1
+  fi
+
+  # Get the selected context from the list
+  context_name=$(echo "$contexts_list" | sed "${choice}q;d")
+
+  # Prompt the user to confirm deletion
+  if [ "$context_name" = "default" ]; then
+    echo "When deleting the \"default\" context, all history will be deleted"
+  fi
+  read -p "Are you sure you want to delete the '$context_name' context? (y/n) " confirm
+
+  if [ "$confirm" = "y" ]; then
+    if [ "$context_name" = "default" ]; then
+      # Create default conversation file
+      default_conversation=$(jq -n --arg model "$MODEL_ID" '{model: $model, temperature: 0.7, messages: []}')
+      echo "$default_conversation" > "$HOME/.navi/conversations/default.json"
+    else
+      # Remove the conversation file
+      conversation_file=$(cat "$HOME/.navi/contexts.json" | jq -r ".contexts.$context_name")
+      rm $conversation_file
+
+      # Remove the context from the contexts file
+      contexts_file="$HOME/.navi/contexts.json"
+      jq "del(.contexts[\"$context_name\"]) | .current_context = if .current_context == \"$context_name\" then \"default\" else .current_context end" "$contexts_file" > "$contexts_file.tmp"
+      mv "$contexts_file.tmp" "$contexts_file"
+
+      echo "${color_success}Context '$context_name' deleted.${reset}"
+    fi
+  else
+    echo "${color_info}Deletion canceled.${reset}"
+  fi
+}
+
+# Function to load or create a conversation JSON file
+load_conversation_file() {
+  # Get the current context
+  current_context=$(get_current_context)
+
+  # Check if the conversation JSON file already exists for the current context
+  if [ -f "$HOME/.navi/conversations/$current_context.json" ]; then
+    # Load the existing conversation JSON file
+    echo "$HOME/.navi/conversations/$current_context.json"
+  else
+    # Generate a new GUID to use as the filename
+    guid=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+
+    # Create a new conversation JSON file with the generated GUID as the filename
+    touch "$HOME/.navi/conversations/$guid.json"
+    printf %s "{\"model\": \"$MODEL_ID\",\"temperature\": 0.7,\"messages\": []}" | jq . > "$HOME/.navi/conversations/$guid.json"
+
+    # Add the new context to the list of contexts in contexts.json
+    contexts=$(cat "$HOME/.navi/contexts.json")
+    new_contexts=$(echo "$contexts" | jq --arg current_context "$current_context" --arg guid "$guid" '.contexts += { ($current_context): $guid }')
+    echo "$new_contexts" > "$HOME/.navi/contexts.json"
+
+    # Load the new conversation JSON file
+    echo "$HOME/.navi/conversations/$guid.json"
+  fi
+}
+
+save_conversation() {
+  file=$1
+  contents=$2
+
+  printf %s "$contents" | jq '.' > "$file"
+}
+
+append_to_messages() {
+  echo "Test!"
+  exit 1
+  local conversation_json="$1"
+  local message="$2"
+
+  # Extract the "messages" array from the JSON string
+  local messages=$(printf %s "$conversation_json" | jq '.messages')
+
+  # If the "messages" array is empty, replace it with an array containing only the new message
+  if [ "$messages" = "[]" ]; then
+    messages=$(printf %s "[$message]")
+  else
+    # Remove any trailing commas or whitespace from the "messages" array
+    messages=$(printf %s "$messages" | jq --argjson message "$message" '. + [$message]')
+  fi
+
+  # Replace the old "messages" array with the updated one in the JSON string
+  conversation_json=$(printf %s "$conversation_json" | jq '.messages = '"$messages"'')
+
+  printf %s "$conversation_json"
+}
+
+create_message() {
+  local role="$1"
+  local content=$(echo "$2" | jq -R '.')
+
+  # Create a JSON object using jq
+  local json=$(jq -n --arg role "$role" --argjson content "$content" '{ role: $role, content: $content }')
+
+  echo "$json"
+}
+
+get_contexts_list() {
+  # Check that the file exists
+  if [ ! -f "$HOME/.navi/contexts.json" ]; then
+    echo "${color_error}Error: contexts file not found${reset}" >&2
+    exit 1
+  fi
+
+  # Extract the list of contexts from the contexts object and output only the keys
+  contexts_list=$(jq -r '.contexts | keys | .[]' "$HOME/.navi/contexts.json")
+
+  # Remove "default" from the contexts list
+  contexts_list=$(echo "$contexts_list" | grep -v "default")
+
+  # Add "default" as the first entry in the contexts list
+  contexts_list="default"$'\n'"$contexts_list"
+
+  # Output the modified list of contexts
+  echo "$contexts_list"
+}
+
+display_contexts_list() {
+  contexts=$(get_contexts_list)
+  echo "${color_info}${contexts}${reset}"
+}
+
+get_current_context() {
+  # Get the current context from the contexts.json file
+  current_context=$(jq -r '.current_context' "$HOME/.navi/contexts.json")
+
+  # Return the current context
+  echo "${current_context}"
+}
+
+display_current_context() {
+  context=$(get_current_context)
+  echo "${color_info}Current context is: ${context}${reset}"
+}
+
+# Function to handle the start command
+start() {
+  check_setup
+  api_key=$(load_api_key) 2>&1
+  
+  # Load context and start conversation
+  context=$(get_current_context)
+  conversation_file=$(load_conversation_file)
+
+  # Prompt the user for input
+  echo "${color_user}"
+  read -p "You: " INPUT
+  echo "${reset}"
+
+  # Add user input to context json
+  conversation_json=$(cat $conversation_file)
+  user_message="{ role: \"user\", content: \"$INPUT\" }"
+
+  new_conversation_json=$(printf %s "$conversation_json" | jq ".messages += [$user_message]")
+  save_conversation "$conversation_file" "$new_conversation_json"
+
+  # Generate a chat completion with spinner
+  curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${api_key}" \
+    -d "$(cat $conversation_file)" \
+    "$API_ENDPOINT/completions" > $HOME/.navi/response.tmp
+
+  response=$(cat $HOME/.navi/response.tmp | jq .choices\[0\].message.content > $HOME/.navi/message_raw.tmp)
+  remove_first_last_char $HOME/.navi/message_raw.tmp > $HOME/.navi/message.tmp
+
+  conversation_json=$(cat $conversation_file)
+  content=""
+  while IFS= read -r line; do
+    content="$content$line\n"
+  done < $HOME/.navi/message.tmp
+
+  assistant_message="{ role: \"assistant\", content: \"$content\" }"
+  new_conversation_json=$(printf %s "$conversation_json" | jq ".messages += [$assistant_message]")
+  save_conversation "$conversation_file" "$new_conversation_json"
+
+  # save_conversation "$conversation_file" "$new_conversation_json"
+  echo "${color_info}Navi: \n$(echo $(cat $HOME/.navi/message.tmp))${reset}"
+}
+
+remove_first_last_char() {
+  sed '1s/^.//; $s/.$//' "$1"
+}
+
+clean() {
+  rm -rf $HOME/.navi
+  sudo rm -rf /etc/navi
+}
+
+# Switch statement to handle different commands
+case "$1" in
+  setup)
+    setup
+    ;;
+  create)
+    create_context
+    ;;
+  select)
+    select_context
+    ;;
+  list)
+    display_contexts_list
+    ;;
+  current)
+    display_current_context
+    ;;
+  delete)
+    delete_context
+    ;;
+  clean)
+    clean
+    ;;
+  "")
+    start
+    ;;
+  *)
+    echo "Error: invalid command passed to navi"
+    exit 1
+    ;;
+esac
