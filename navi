@@ -370,6 +370,8 @@ start() {
   read -p "You: " INPUT
   echo -e "${reset}"
 
+  INPUT=$(printf %s "$INPUT" | sed 's|"|\\"|g')
+
   # Add user input to context json
   conversation_json=$(cat $conversation_file)
   user_message="{ role: \"user\", content: \"$INPUT\" }"
@@ -398,7 +400,7 @@ start() {
   save_conversation "$conversation_file" "$new_conversation_json"
 
   # save_conversation "$conversation_file" "$new_conversation_json"
-  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp))${reset}"
+  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp | sed 's|\\"|"|g')))${reset}"
 }
 
 # Function to handle the start command
@@ -415,6 +417,8 @@ start_continue() {
   read -p "You: " INPUT
   echo -e "${reset}"
 
+  INPUT=$(printf %s "$INPUT" | sed 's|"|\\"|g')
+
   # Add user input to context json
   conversation_json=$(cat $conversation_file)
   user_message="{ role: \"user\", content: \"$INPUT\" }"
@@ -443,7 +447,7 @@ start_continue() {
   save_conversation "$conversation_file" "$new_conversation_json"
 
   # save_conversation "$conversation_file" "$new_conversation_json"
-  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp))${reset}"
+  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp | sed 's|\\"|"|g')))${reset}"
 
   start_continue
 }
