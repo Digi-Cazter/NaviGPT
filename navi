@@ -401,6 +401,53 @@ start() {
   echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp))${reset}"
 }
 
+# Function to handle the start command
+start_continue() {
+  check_setup
+  api_key=$(load_api_key) 2>&1
+  
+  # Load context and start conversation
+  context=$(get_current_context)
+  conversation_file=$(load_conversation_file)
+
+  # Prompt the user for input
+  echo -e "${color_user}"
+  read -p "You: " INPUT
+  echo -e "${reset}"
+
+  # Add user input to context json
+  conversation_json=$(cat $conversation_file)
+  user_message="{ role: \"user\", content: \"$INPUT\" }"
+
+  new_conversation_json=$(printf %s "$conversation_json" | jq ".messages += [$user_message]")
+  save_conversation "$conversation_file" "$new_conversation_json"
+
+  # Generate a chat completion with spinner
+  curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${api_key}" \
+    -d "$(cat $conversation_file)" \
+    "$API_ENDPOINT/completions" > $HOME/.navi/response.tmp
+
+  response=$(cat $HOME/.navi/response.tmp | jq .choices\[0\].message.content > $HOME/.navi/message_raw.tmp)
+  remove_first_last_char $HOME/.navi/message_raw.tmp > $HOME/.navi/message.tmp
+
+  conversation_json=$(cat $conversation_file)
+  content=""
+  while IFS= read -r line; do
+    content="$content$line\n"
+  done < $HOME/.navi/message.tmp
+
+  assistant_message="{ role: \"assistant\", content: \"$content\" }"
+  new_conversation_json=$(printf %s "$conversation_json" | jq ".messages += [$assistant_message]")
+  save_conversation "$conversation_file" "$new_conversation_json"
+
+  # save_conversation "$conversation_file" "$new_conversation_json"
+  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp))${reset}"
+
+  start_continue
+}
+
 remove_first_last_char() {
   sed '1s/^.//; $s/.$//' "$1"
 }
@@ -432,6 +479,9 @@ case "$1" in
     ;;
   clean)
     clean
+    ;;
+  continue
+    start_continue
     ;;
   "")
     start
