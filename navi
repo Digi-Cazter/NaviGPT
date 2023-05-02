@@ -480,7 +480,7 @@ case "$1" in
   clean)
     clean
     ;;
-  continue
+  continue)
     start_continue
     ;;
   "")
