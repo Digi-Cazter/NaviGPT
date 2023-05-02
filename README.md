@@ -1,1 +1,1 @@
-`curl -sSL https://example.com/install.sh | bash`
+`curl -sSL https://raw.githubusercontent.com/Digi-Cazter/NaviGPT/main/install.sh | bash`
