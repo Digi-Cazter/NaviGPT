@@ -27,7 +27,7 @@ fi
 load_api_key() {
   # Check that the file exists
   if [ ! -f "/etc/navi/config.json" ]; then
-    echo "${color_error}Error: config file not found${reset}" >&2
+    echo -e "${color_error}Error: config file not found${reset}" >&2
     exit 1
   fi
   
@@ -36,11 +36,11 @@ load_api_key() {
   
   # Check that the api_key was loaded successfully
   if [ -z "$api_key" ]; then
-    echo "${color_error}Error: api_key not found in config file, please run 'navi setup' again${reset}" >&2
+    echo -e "${color_error}Error: api_key not found in config file, please run 'navi setup' again${reset}" >&2
     exit 1
   fi
   
-  echo $api_key
+  echo -e $api_key
 }
 
 # Function to check if required files and directories exist
@@ -73,7 +73,7 @@ check_setup() {
   fi  
 
   if ! $valid; then
-    echo "${color_error}Navi has not been configured. Please run 'navi setup' to configure.${reset}"
+    echo -e "${color_error}Navi has not been configured. Please run 'navi setup' to configure.${reset}"
     exit 1
   fi
 }
@@ -82,7 +82,7 @@ check_setup() {
 setup() {
   # Check if Navi setup has already been completed
   if [ -d "/etc/navi" ] && [ -d "$HOME/.navi" ] && api_key=$(load_api_key 2>/dev/null); then
-    echo "${color_success}Navi setup already completed.${reset}"
+    echo -e "${color_success}Navi setup already completed.${reset}"
     exit 1
   fi
 
@@ -109,7 +109,7 @@ setup() {
   # Set permissions for /etc/navi directory and its contents
   sudo chmod -R 755 /etc/navi
 
-  echo "${color_success}Navi setup completed successfully.${reset}"
+  echo -e "${color_success}Navi setup completed successfully.${reset}"
 }
 
 create_context() {
@@ -118,7 +118,7 @@ create_context() {
 
   # Check that the context name is not empty
   if [ -z "$context_name" ]; then
-    echo "${color_error}Error: context name cannot be empty${reset}" >&2
+    echo -e "${color_error}Error: context name cannot be empty${reset}" >&2
     exit 1
   fi
 
@@ -135,7 +135,7 @@ create_context() {
   current_context=$(jq -r '.current_context' "$contexts_file")
   echo "{\"current_context\": \"$current_context\", \"contexts\": $contexts}" > "$contexts_file"
 
-  echo "${color_success}New context '$context_name' created.${reset}"
+  echo -e "${color_success}New context '$context_name' created.${reset}"
 }
 
 select_context() {
@@ -144,19 +144,19 @@ select_context() {
 
   # Check that there is at least one context
   if [ -z "$contexts_list" ]; then
-    echo "${color_error}Error: no contexts found in file${reset}" >&2
+    echo -e "${color_error}Error: no contexts found in file${reset}" >&2
     exit 1
   fi
 
   # Present the list of contexts to the user and prompt for selection
-  echo "${color_info}"
-  echo "Select a context:"
+  echo -e "${color_info}"
+  echo -e "Select a context:"
   i=1
   while read -r context; do
-    echo "$i) $context"
+    echo -e "$i) $context"
     i=$((i+1))
   done <<< "$contexts_list"
-  echo "${reset}"
+  echo -e "${reset}"
   read -p "Enter number: " choice
 
   # Set the default choice to 1 if no input is provided
@@ -164,13 +164,13 @@ select_context() {
 
   # Check that the choice is a valid integer
   if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
-    echo "${color_error}Error: '$choice' is not a valid integer${reset}" >&2
+    echo -e "${color_error}Error: '$choice' is not a valid integer${reset}" >&2
     exit 1
   fi
 
   # Check that the choice is within the range of options
   if [ "$choice" -lt 1 ] || [ "$choice" -gt "$i" ]; then
-    echo "${color_error}Error: '$choice' is not a valid option${reset}" >&2
+    echo -e "${color_error}Error: '$choice' is not a valid option${reset}" >&2
     exit 1
   fi
 
@@ -180,7 +180,7 @@ select_context() {
   # Use jq to set the selected context as the current context in contexts.json
   jq --arg context "$context" '.current_context = $context' "$HOME/.navi/contexts.json" > tmp.json && mv tmp.json "$HOME/.navi/contexts.json"
 
-  echo "${color_success}Context '$context' selected.${reset}"
+  echo -e "${color_success}Context '$context' selected.${reset}"
 }
 
 # Delete a context
@@ -190,19 +190,19 @@ delete_context() {
 
   # Check that there is at least one context
   if [ -z "$contexts_list" ]; then
-    echo "${color_error}Error: no contexts found in file${reset}" >&2
+    echo -e "${color_error}Error: no contexts found in file${reset}" >&2
     exit 1
   fi
 
   # Present the list of contexts to the user and prompt for selection
-  echo "${color_info}"
-  echo "Select a context:"
+  echo -e "${color_info}"
+  echo -e "Select a context:"
   i=1
   while read -r context; do
-    echo "$i) $context"
+    echo -e "$i) $context"
     i=$((i+1))
   done <<< "$contexts_list"
-  echo "${reset}"
+  echo -e "${reset}"
   read -p "Enter number: " choice
 
   # Set the default choice to 1 if no input is provided
@@ -210,13 +210,13 @@ delete_context() {
 
   # Check that the choice is a valid integer
   if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
-    echo "${color_error}Error: '$choice' is not a valid integer${reset}" >&2
+    echo -e "${color_error}Error: '$choice' is not a valid integer${reset}" >&2
     exit 1
   fi
 
   # Check that the choice is within the range of options
   if [ "$choice" -lt 1 ] || [ "$choice" -gt "$i" ]; then
-    echo "${color_error}Error: '$choice' is not a valid option${reset}" >&2
+    echo -e "${color_error}Error: '$choice' is not a valid option${reset}" >&2
     exit 1
   fi
 
@@ -225,7 +225,7 @@ delete_context() {
 
   # Prompt the user to confirm deletion
   if [ "$context_name" = "default" ]; then
-    echo "When deleting the \"default\" context, all history will be deleted"
+    echo -e "When deleting the \"default\" context, all history will be deleted"
   fi
   read -p "Are you sure you want to delete the '$context_name' context? (y/n) " confirm
 
@@ -244,10 +244,10 @@ delete_context() {
       jq "del(.contexts[\"$context_name\"]) | .current_context = if .current_context == \"$context_name\" then \"default\" else .current_context end" "$contexts_file" > "$contexts_file.tmp"
       mv "$contexts_file.tmp" "$contexts_file"
 
-      echo "${color_success}Context '$context_name' deleted.${reset}"
+      echo -e "${color_success}Context '$context_name' deleted.${reset}"
     fi
   else
-    echo "${color_info}Deletion canceled.${reset}"
+    echo -e "${color_info}Deletion canceled.${reset}"
   fi
 }
 
@@ -340,7 +340,7 @@ get_contexts_list() {
 
 display_contexts_list() {
   contexts=$(get_contexts_list)
-  echo "${color_info}${contexts}${reset}"
+  echo -e "${color_info}${contexts}${reset}"
 }
 
 get_current_context() {
@@ -353,7 +353,7 @@ get_current_context() {
 
 display_current_context() {
   context=$(get_current_context)
-  echo "${color_info}Current context is: ${context}${reset}"
+  echo -e "${color_info}Current context is: ${context}${reset}"
 }
 
 # Function to handle the start command
@@ -487,7 +487,7 @@ case "$1" in
     start
     ;;
   *)
-    echo "Error: invalid command passed to navi"
+    echo -e "Error: invalid command passed to navi"
     exit 1
     ;;
 esac
