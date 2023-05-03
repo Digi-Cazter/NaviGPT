@@ -138,6 +138,24 @@ create_context() {
   echo -e "${color_success}New context '$context_name' created.${reset}"
 }
 
+create_context_on_load() {
+  context="$1"
+
+  # Generate a new conversation file name using a GUID
+  conversation_file="$HOME/.navi/conversations/$(uuidgen).json"
+
+  # Create an empty conversation file
+  echo "{\"model\": \"$MODEL_ID\", \"temperature\": 0.7, \"messages\": []}" | jq . > "$conversation_file"
+
+  # Add the new context to the contexts file
+  contexts_file="$HOME/.navi/contexts.json"
+  contexts=$(jq -r '.contexts' "$contexts_file")
+  contexts=$(echo "$contexts" | jq ".+ {\"$context_name\": \"$conversation_file\"}")
+  current_context=$(jq -r '.current_context' "$contexts_file")
+  echo "{\"current_context\": \"$current_context\", \"contexts\": $contexts}" > "$contexts_file"
+  echo $conversation_file
+}
+
 select_context() {
   # Get the list of contexts
   contexts_list=$(get_contexts_list)
@@ -153,7 +171,7 @@ select_context() {
   echo -e "Select a context:"
   i=1
   while read -r context; do
-    echo -e "$i) $context"
+    echo "$i) $context"
     i=$((i+1))
   done <<< "$contexts_list"
   echo -e "${reset}"
@@ -251,61 +269,11 @@ delete_context() {
   fi
 }
 
-# Function to load or create a conversation JSON file
-load_conversation_file() {
-  # Get the current context
-  current_context=$(get_current_context)
-
-  # Check if the conversation JSON file already exists for the current context
-  if [ -f "$HOME/.navi/conversations/$current_context.json" ]; then
-    # Load the existing conversation JSON file
-    echo "$HOME/.navi/conversations/$current_context.json"
-  else
-    # Generate a new GUID to use as the filename
-    guid=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
-
-    # Create a new conversation JSON file with the generated GUID as the filename
-    touch "$HOME/.navi/conversations/$guid.json"
-    printf %s "{\"model\": \"$MODEL_ID\",\"temperature\": 0.7,\"messages\": []}" | jq . > "$HOME/.navi/conversations/$guid.json"
-
-    # Add the new context to the list of contexts in contexts.json
-    contexts=$(cat "$HOME/.navi/contexts.json")
-    new_contexts=$(echo "$contexts" | jq --arg current_context "$current_context" --arg guid "$guid" '.contexts += { ($current_context): $guid }')
-    echo "$new_contexts" > "$HOME/.navi/contexts.json"
-
-    # Load the new conversation JSON file
-    echo "$HOME/.navi/conversations/$guid.json"
-  fi
-}
-
 save_conversation() {
   file=$1
   contents=$2
 
   printf %s "$contents" | jq '.' > "$file"
-}
-
-append_to_messages() {
-  echo "Test!"
-  exit 1
-  local conversation_json="$1"
-  local message="$2"
-
-  # Extract the "messages" array from the JSON string
-  local messages=$(printf %s "$conversation_json" | jq '.messages')
-
-  # If the "messages" array is empty, replace it with an array containing only the new message
-  if [ "$messages" = "[]" ]; then
-    messages=$(printf %s "[$message]")
-  else
-    # Remove any trailing commas or whitespace from the "messages" array
-    messages=$(printf %s "$messages" | jq --argjson message "$message" '. + [$message]')
-  fi
-
-  # Replace the old "messages" array with the updated one in the JSON string
-  conversation_json=$(printf %s "$conversation_json" | jq '.messages = '"$messages"'')
-
-  printf %s "$conversation_json"
 }
 
 create_message() {
@@ -345,10 +313,10 @@ display_contexts_list() {
 
 get_current_context() {
   # Get the current context from the contexts.json file
-  current_context=$(jq -r '.current_context' "$HOME/.navi/contexts.json")
+  current_context=$(cat "$HOME/.navi/contexts.json" | jq -r .current_context)
 
   # Return the current context
-  echo "${current_context}"
+  echo $current_context
 }
 
 display_current_context() {
@@ -363,7 +331,12 @@ start() {
   
   # Load context and start conversation
   context=$(get_current_context)
-  conversation_file=$(load_conversation_file)
+  conversation_file=$(cat "$HOME/.navi/contexts.json" | jq -r .contexts.$context)
+
+  if [[ ! -f "$conversation_file" ]]; then
+    echo "No conversation file!"
+    exit 1
+  fi
 
   # Prompt the user for input
   echo -e "${color_user}"
@@ -400,7 +373,7 @@ start() {
   save_conversation "$conversation_file" "$new_conversation_json"
 
   # save_conversation "$conversation_file" "$new_conversation_json"
-  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp | sed 's|\\"|"|g')))${reset}"
+  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp | sed 's|\\"|"|g'))${reset}"
 }
 
 # Function to handle the start command
@@ -410,7 +383,12 @@ start_continue() {
   
   # Load context and start conversation
   context=$(get_current_context)
-  conversation_file=$(load_conversation_file)
+  conversation_file=$(cat "$HOME/.navi/contexts.json" | jq -r .contexts.$context)
+
+  if [[ ! -f "$conversation_file" ]]; then
+    echo "No conversation file!"
+    exit 1
+  fi
 
   # Prompt the user for input
   echo -e "${color_user}"
@@ -447,7 +425,7 @@ start_continue() {
   save_conversation "$conversation_file" "$new_conversation_json"
 
   # save_conversation "$conversation_file" "$new_conversation_json"
-  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp | sed 's|\\"|"|g')))${reset}"
+  echo -e "${color_info}Navi: \n$(echo -e $(cat $HOME/.navi/message.tmp | sed 's|\\"|"|g'))${reset}"
 
   start_continue
 }
